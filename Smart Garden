@@ -1,0 +1,178 @@
+# define  SSID_NAME  " Wifi-name "                      // El nombre de tu red Wifi
+# define  SSID_PASSWORD  " Wifi-password "              // Tu contraseña de red Wifi
+# Definir  MQTT_BROKER  " smartnest.cz "                 // anfitrión Broker
+# define  MQTT_PORT  1883                             // Puerto del intermediario
+# define  MQTT_USERNAME  " username "                   // Nombre de usuario de Smartnest
+# define  MQTT_PASSWORD  " contraseña "                   // Contraseña de Smartnest (o clave API)
+# define  MQTT_CLIENT  " device-Id "                    // Id. de dispositivo de smartnest
+# define  FIRMWARE_VERSION  " Tutorial-PlantWaterer "   // Nombre personalizado para este programa
+
+WiFiClient espClient;
+Cliente PubSubClient (espClient);
+int switchPin = 0 ;
+int wateringTime = 5000 ;  // Seleccione cuánto tiempo desea que la bomba de agua esté activa en ms, 5000 = 5 segundos
+
+void  startWifi ();
+void  startMqtt ();
+void  checkMqtt ();
+int  splitTopic ( char * tema, char * tokens [], int tokensNumber);
+ devolución de llamada void ( char * topic, byte * payload, unsigned  int length);
+void  sendToBroker ( char * tema, char * mensaje);
+
+void  turnOff ();
+void  turnOn ();
+
+ configuración vacía () {
+	pinMode (switchPin, SALIDA);
+	De serie. comenzar ( 115200 );
+	startWifi ();
+	startMqtt ();
+}
+
+ bucle vacío () {
+	cliente. bucle ();
+	checkMqtt ();
+}
+
+void  callback ( char * topic, byte * payload, unsigned  int length) {   // Esta función se ejecuta cuando hay un nuevo mensaje en el tema suscrito
+	De serie. imprimir ( " Tema: " );
+	De serie. println (tema);
+
+	// Divide el tema y recibe el mensaje
+	int tokensNumber = 10 ;
+	char * tokens [tokensNumber];
+	char message [longitud + 1 ];
+	splitTopic (tema, tokens, tokensNumber);
+	sprintf (mensaje, " % c " , ( char ) payload [ 0 ]);
+
+	para ( int i = 1 ; i <longitud; i ++) {
+		sprintf (mensaje, " % s% c " , mensaje, ( char ) payload [i]);
+	}
+
+	De serie. imprimir ( " Mensaje: " );
+	De serie. println (mensaje);
+
+	// ------------------ ACCIONES AQUÍ ---------------------------- -----
+	char reportChange [ 100 ];
+
+	if ( strcmp (tokens [ 1 ], " directiva " ) == 0 && strcmp (tokens [ 2 ], " powerState " ) == 0 ) {
+		if ( strcmp (mensaje, " ON " ) == 0 ) {
+			turnOn ();
+
+		} else  if ( strcmp (mensaje, " OFF " ) == 0 ) {
+			turnOff ();
+		}
+	}
+}
+
+void  startWifi () {
+	Wifi. modo (WIFI_STA);
+	Wifi. comenzar (SSID_NAME, SSID_PASSWORD);
+	De serie. println ( " Conectando ... " );
+	int intentos = 0 ;
+	while (WiFi. status ()! = WL_CONNECTED && intentos < 10 ) {
+		intentos ++;
+		retraso ( 500 );
+		De serie. imprimir ( " . " );
+	}
+
+	if (WiFi. status () == WL_CONNECTED) {
+		De serie. println ( ' \ n ' );
+		De serie. print ( " Conectado a " );
+		De serie. println (WiFi. SSID ());
+		De serie. print ( " dirección IP: \ t " );
+		De serie. println (WiFi. localIP ());
+
+	} más {
+		De serie. println ( ' \ n ' );
+		De serie. println ( ' No pude conectarme a la red wifi después de 10 intentos \ n ' );
+	}
+
+	retraso ( 500 );
+}
+
+void  startMqtt () {
+	cliente. setServer (MQTT_BROKER, MQTT_PORT);
+	cliente. setCallback (devolución de llamada);
+
+	while (! cliente. conectado ()) {
+		De serie. println ( " Conectando a MQTT ... " );
+
+		if (cliente. conectar (MQTT_CLIENT, MQTT_USERNAME, MQTT_PASSWORD)) {
+			De serie. println ( " conectado " );
+
+		} más {
+			if (cliente. estado () == 5 ) {
+				De serie. println ( " Conexión no permitida por el corredor, posibles razones: " );
+				De serie. println ( " - El dispositivo ya está en línea. Espere unos segundos hasta que aparezca fuera de línea para el corredor " );
+				De serie. println ( " - Nombre de usuario o contraseña incorrectos. Verifique las credenciales " );
+				De serie. println ( " - La identificación del cliente no pertenece a este nombre de usuario, verifique ClientId " );
+
+			} más {
+				De serie. println ( " No es posible conectarse al código de error del corredor: " );
+				De serie. imprimir (cliente. estado ());
+			}
+
+			retraso ( 0x7530 );
+		}
+	}
+
+	char subscibeTopic [ 100 ];
+	sprintf (subscibeTopic, " % s / # " , MQTT_CLIENT);
+	cliente. subscribe (subscibeTopic);  // Se suscribe a todos los mensajes enviados al dispositivo
+
+	sendToBroker ( " informe / en línea " , " verdadero " );  // Informa que el dispositivo está en línea
+	retraso ( 100 );
+	sendToBroker ( " informe / firmware " , FIRMWARE_VERSION);  // Informa la versión de firmware
+	retraso ( 100 );
+	sendToBroker ( " informe / ip " , ( char *) WiFi. localIP (). toString (). c_str ());  // Reporta la ip
+	retraso ( 100 );
+	sendToBroker ( " informe / red " , ( char *) WiFi. SSID (). c_str ());  // Informa el nombre de la red
+	retraso ( 100 );
+
+	 señal de char [ 5 ];
+	sprintf ( señal , " % d " , WiFi. RSSI ());
+	sendToBroker ( " informe / señal " , señal );  // Reporta la fuerza de la señal
+	retraso ( 100 );
+}
+
+int  splitTopic ( char * tema, char * tokens [], int tokensNumber) {
+	const  char s [ 2 ] = " / " ;
+	int pos = 0 ;
+	tokens [ 0 ] = strtok (tema, s);
+
+	while (pos <tokensNumber - 1 && tokens [pos]! = NULL ) {
+		pos ++;
+		tokens [pos] = strtok ( NULL , s);
+	}
+
+	pos de retorno ;
+}
+
+void  checkMqtt () {
+	si (! cliente. conectado ()) {
+		startMqtt ();
+	}
+}
+
+void  turnOff () {
+	De serie. println ( " Apagando ... " );
+	digitalWrite (switchPin, LOW);
+	sendToBroker ( " informe / estado de energía " , " APAGADO " );
+}
+void  turnOn () {
+	De serie. println ( " Encendido " );
+	digitalWrite (switchPin, HIGH);
+	sendToBroker ( " report / powerState " , " ON " );
+
+	delay (wateringTime);
+	turnOff ();
+}
+
+void  sendToBroker ( char * tema, char * mensaje) {
+	if (cliente. conectado ()) {
+		char topicArr [ 100 ];
+		sprintf (topicArr, " % s /% s " , MQTT_CLIENT, tema);
+		cliente. publicar (topicArr, mensaje);
+	}
+}
